@@ -1,5 +1,12 @@
 streamlit
 openai
 pandas
+pandasai
 Pillow
 requests
+loguru
+streamlit
+extra_streamlit_components
+pyyaml
+openpyxl
+

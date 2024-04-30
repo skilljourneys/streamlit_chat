@@ -19,13 +19,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"  # Optional: use "auto", "expanded", or "collapsed"
 )
 
-hide_main_menu = """
-#MainMenu {
-  visibility: hidden;
-}
-"""
-st.markdown(hide_main_menu, unsafe_allow_html=True)
-
 @st.cache_data
 def create_model_data_table():
     model_data = {
@@ -92,16 +85,158 @@ if openai_api_key and not is_api_key_valid(openai_api_key):
     st.warning('Invalid OpenAI API key. Please provide a valid key.', icon='⚠️')
     st.stop()
 else:
-    client = openai.OpenAI(api_key=openai_api_key)    
+    client = openai.OpenAI(api_key=openai_api_key) 
+    pdclient = OpenAI(openai_api_key)   
 
 chosen_id = stx.tab_bar([
     stx.TabBarItemData(id="1", title="Chat", description=""),
     stx.TabBarItemData(id="2", title="Image Analysis", description=""),
     stx.TabBarItemData(id="3", title="Image Generation", description=""),
-    stx.TabBarItemData(id="4", title="Talk Against Document", description="")
+    stx.TabBarItemData(id="4", title="Talk with CSV or XLSX", description="")
 ])
 
-if chosen_id == "1":
+#----------------------Image processing----------------------
+if chosen_id == "2":   
+            # Set up the title of the app
+    st.title(":rainbow[Skilljourneys Vision GPT]")
+    st.subheader(":rainbow[Upload an Image for Analysis]")
+
+    # Link to Trivera Tech website
+    st.markdown(":blue[For more information, visit [Triveratech](https://www.triveratech.com).]")
+
+    with st.sidebar:
+        uploaded_image = st.file_uploader("Upload file", type=["jpg", "jpeg", "png", "gif"])
+        model_option = st.selectbox("Select Model", ["gpt-4-vision-preview", "gpt-4-1106-vision-preview"], index=0) 
+
+    user_prompt = st.text_area(label="Enter Prompt", value="What's in this image?")
+
+    if st.button(label="Analyze Image"):
+        if openai_api_key and (uploaded_image):
+            image_to_analyze = None
+
+            if uploaded_image:
+                try:
+                    with Image.open(uploaded_image) as image_to_analyze:
+                       image_type = image_to_analyze.format
+                       # Display and process the uploaded image
+                       st.image(image_to_analyze, caption='Uploaded Image',)
+                       image_url = get_image_url(image_to_analyze, image_type)
+                except (FileNotFoundError, IOError):
+                       image_type = None              
+
+            if image_url:
+                # Request to OpenAI
+                response = client.chat.completions.create(
+                    model=model_option,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [{"type": "text", "text": user_prompt},
+                                        {"type": "image_url", "image_url": {"url": image_url}}],
+                        }
+                    ],
+                    max_tokens=300,
+                )
+                try:
+                    # Extract the response text correctly according to the response structure
+                    result_text = response.choices[0].message.content
+                    st.write(result_text)
+                except KeyError as e:
+                    st.error(f"Error extracting response: {e}")
+                    st.write(response)  # Print the whole response for debugging
+        else:
+            st.warning("Please provide an image URL or upload an image and ensure the API key is entered.")
+# ----- Image generation -----
+elif chosen_id == "3":
+        # Set up the title of the app
+    st.title(":rainbow[Skilljourneys Vision GPT]")
+    st.subheader(":rainbow[Creating images]")
+    # Link to Trivera Tech website
+    st.markdown(":blue[For more information, visit [Triveratech](https://www.triveratech.com).]")
+
+    with st.sidebar:
+       model_option = st.selectbox("Select Model", ["gpt-4-vision-preview", "gpt-4-1106-vision-preview"], index=0)
+       # DALL-E settings
+       dalle_size = st.selectbox("Select Image Size", ["1024x1024", "512x512", "256x256"], index=0)
+       dalle_quality = st.selectbox("Select Image Quality", ["standard", "hd"], index=0)
+       dalle_n = st.slider("Number of Images", 1, 4, 1)
+    
+
+    dalle_prompt = st.text_area(label="Enter Prompt for DALL-E", value="a beautiful holiday destination")
+    if st.button("Generate Image"):
+        if openai_api_key:
+            try:
+                # Request to OpenAI DALL-E
+                response = client.images.generate(
+                     prompt=dalle_prompt,
+                    size=dalle_size,
+                    quality=dalle_quality,
+                    n=dalle_n,
+                )
+                # Display generated images
+                for i in range(len(response.data)):
+                    st.image(response.data[i].url, caption=f"Generated Image {i+1}")
+            except Exception as e:
+                st.error(f"Error generating images with DALL-E: {e}")
+        else:
+            st.warning("Please enter the OpenAI API key.")
+
+#----------------------Talking to CSV or Excel----------------------
+#https://docs.pandas-ai.com/en/latest/getting-started/
+elif chosen_id == "4":  
+     # Set up the title of the app
+    st.title(":rainbow[Skilljourneys Document GPT]")
+    st.subheader(":rainbow[Chat with CSV or XLSX files]")
+
+    # Link to Trivera Tech website
+    st.markdown(":blue[For more information, visit [Triveratech](https://www.triveratech.com).]")
+
+    with st.sidebar:
+        # Allow user to upload multiple files
+        input_files = st.file_uploader(
+            "Upload files", type=["xlsx", "csv"], accept_multiple_files=True
+        )
+
+    # Main content area
+    data_list = []
+    # If user uploaded files, load them
+    if len(input_files) > 0:
+        for input_file in input_files:
+            if input_file.name.lower().endswith(".csv"):
+                data = pd.read_csv(input_file)
+            else:
+                data = pd.read_excel(input_file)
+                #st.dataframe(data, use_container_width=True)
+                data_list.append(data)
+        # Create SmartDatalake instance
+        df = SmartDatalake(
+            data_list,
+            config={
+                "llm": pdclient,
+                "verbose": False,
+                "enable_cache":False,
+                "save_logs": False,
+                "response_parser": StreamlitResponse
+            },
+        )
+        # Input text   
+    if len(input_files) > 0:
+        st.subheader("Ask your questions")
+        if prompt := st.chat_input("Enter Prompt"):
+            result = df.chat(prompt)
+            # Display the result and code in two columns
+            col1, col2 = st.columns(2)
+            with col1:
+                # Display the result
+                st.header("Answer")
+                st.write(result)
+            with col2:
+                # Display the corresponding code
+                st.header("The corresponding code")
+                st.code(df.last_code_executed, language="python", line_numbers=True)
+
+# -------------------- Regular Chat API --------------------
+else:
     # Set up the title of the app
     st.title(":rainbow[Skilljourneys ChatGPT]")
     # Link to Trivera Tech website
@@ -171,161 +306,3 @@ if chosen_id == "1":
         if st.button('Clear', key="clear"):
             st.session_state.messages = []
             st.rerun()  
-
-#Image generation
-elif chosen_id == "3":
-        # Set up the title of the app
-    st.title(":rainbow[Skilljourneys Vision GPT]")
-    st.subheader(":rainbow[Creating images]")
-    # Link to Trivera Tech website
-    st.markdown(":blue[For more information, visit [Triveratech](https://www.triveratech.com).]")
-
-    with st.sidebar:
-       model_option = st.selectbox("Select Model", ["gpt-4-vision-preview", "gpt-4-1106-vision-preview"], index=0)
-       # DALL-E settings
-       dalle_size = st.selectbox("Select Image Size", ["1024x1024", "512x512", "256x256"], index=0)
-       dalle_quality = st.selectbox("Select Image Quality", ["standard", "hd"], index=0)
-       dalle_n = st.slider("Number of Images", 1, 4, 1)
-    
-
-    dalle_prompt = st.text_area(label="Enter Prompt for DALL-E", value="a beautiful holiday destination")
-    if st.button("Generate Image"):
-        if openai_api_key:
-            try:
-                # Request to OpenAI DALL-E
-                response = client.images.generate(
-                     prompt=dalle_prompt,
-                    size=dalle_size,
-                    quality=dalle_quality,
-                    n=dalle_n,
-                )
-                # Display generated images
-                for i in range(len(response.data)):
-                    st.image(response.data[i].url, caption=f"Generated Image {i+1}")
-            except Exception as e:
-                st.error(f"Error generating images with DALL-E: {e}")
-        else:
-            st.warning("Please enter the OpenAI API key.")
-
-
-#----------------------Image processing----------------------
-elif chosen_id == "2":   
-            # Set up the title of the app
-    st.title(":rainbow[Skilljourneys Vision GPT]")
-    st.subheader(":rainbow[Upload an Image for Analysis]")
-
-    # Link to Trivera Tech website
-    st.markdown(":blue[For more information, visit [Triveratech](https://www.triveratech.com).]")
-
-    with st.sidebar:
-        uploaded_image = st.file_uploader("Upload file", type=["jpg", "jpeg", "png", "gif"])
-        model_option = st.selectbox("Select Model", ["gpt-4-vision-preview", "gpt-4-1106-vision-preview"], index=0) 
-
-    user_prompt = st.text_area(label="Enter Prompt", value="What's in this image?")
-
-    if st.button(label="Analyze Image"):
-        if openai_api_key and (uploaded_image):
-            image_to_analyze = None
-
-            if uploaded_image:
-                try:
-                    with Image.open(uploaded_image) as image_to_analyze:
-                       image_type = image_to_analyze.format
-                       # Display and process the uploaded image
-                       st.image(image_to_analyze, caption='Uploaded Image',)
-                       image_url = get_image_url(image_to_analyze, image_type)
-                except (FileNotFoundError, IOError):
-                       image_type = None              
-
-            if image_url:
-                # Request to OpenAI
-                response = client.chat.completions.create(
-                    model=model_option,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [{"type": "text", "text": user_prompt},
-                                        {"type": "image_url", "image_url": {"url": image_url}}],
-                        }
-                    ],
-                    max_tokens=300,
-                )
-                try:
-                    # Extract the response text correctly according to the response structure
-                    result_text = response.choices[0].message.content
-                    st.write(result_text)
-                except KeyError as e:
-                    st.error(f"Error extracting response: {e}")
-                    st.write(response)  # Print the whole response for debugging
-        else:
-            st.warning("Please provide an image URL or upload an image and ensure the API key is entered.")
-
-#----------------------Talking to your document----------------------
-elif chosen_id == "4":  
-     # Set up the title of the app
-    st.title(":rainbow[Skilljourneys Document GPT]")
-    st.subheader(":rainbow[Chat with CSV or XLSX files]")
-
-    # Link to Trivera Tech website
-    st.markdown(":blue[For more information, visit [Triveratech](https://www.triveratech.com).]")
-
-    with st.sidebar:
-        # Allow user to upload multiple files
-        input_files = st.file_uploader(
-            "Upload files", type=["xlsx", "csv"], accept_multiple_files=True
-        )
-
-  # Main content area
-    with st.container():
-
-        data_list = []
-        # If user uploaded files, load them
-        if len(input_files) > 0:
-           
-            for input_file in input_files:
-                if input_file.name.lower().endswith(".csv"):
-                    data = pd.read_csv(input_file)
-                else:
-                    data = pd.read_excel(input_file)
-                st.dataframe(data, use_container_width=True)
-                data_list.append(data)
-        # Otherwise, load the default file
-        else:
-            st.header("Example Data")
-            data = pd.read_excel("./Sample.xlsx")
-            st.dataframe(data, use_container_width=True)
-            data_list = [data]
-
- 
-        # Create SmartDatalake instance
-        df = SmartDatalake(
-            data_list,
-            config={
-                "llm": OpenAI(api_token=openai_api_key),
-                "verbose": True,
-                "response_parser": StreamlitResponse,
-                
-            },
-        )
-        # Input text
-        st.header("Ask anything!")
-        input_text = st.text_area(
-            "Enter your question", value="What is the total profit for each country?"
-        )
-
-        if input_text is not None:
-            if st.button("Start Execution"):
-                result = df.chat(input_text)
-
-                # Display the result and code in two columns
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    # Display the result
-                    st.header("Answer")
-                    st.write(result)
-
-                with col2:
-                    # Display the corresponding code
-                    st.header("The corresponding code")
-                    st.code(df.last_code_executed, language="python", line_numbers=True)
