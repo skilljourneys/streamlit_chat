@@ -1,7 +1,7 @@
 # Skilljourneys GPT
 powered by TrivareTech
 
-![Skilljourneys LXP](attachment:images/screenshot.png)
+<img src="images/screenshot.png" width="75%">
 
 
 
