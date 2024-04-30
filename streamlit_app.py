@@ -8,6 +8,9 @@ from PIL import Image
 import requests
 from io import BytesIO
 import base64
+from pandasai.llm import OpenAI
+from pandasai import SmartDatalake
+from pandasai.responses.streamlit_response import StreamlitResponse
 
 st.set_page_config(
     page_title="Skilljourneys ChatGPT",  # Sets the browser tab's title
@@ -15,6 +18,13 @@ st.set_page_config(
     layout="wide",               # Optional: use "wide" or "centered", the default is "centered"
     initial_sidebar_state="expanded"  # Optional: use "auto", "expanded", or "collapsed"
 )
+
+hide_main_menu = """
+#MainMenu {
+  visibility: hidden;
+}
+"""
+st.markdown(hide_main_menu, unsafe_allow_html=True)
 
 @st.cache_data
 def create_model_data_table():
@@ -58,6 +68,15 @@ def is_api_key_valid(api_key):
     else:
         return True
 
+# Function to get image URL from uploaded file
+def get_image_url(image, image_type):
+    buffer = BytesIO()
+    image.save(buffer, format=image_type)
+    buffer.seek(0)
+    data_uri = base64.b64encode(buffer.read()).decode('utf-8')
+    image_url = f"data:image/{image_type};base64,{data_uri}"
+    return image_url
+
 # Display the image at the top of the page
 st.image("https://lwfiles.mycourse.app/65a6a0bb6e5c564383a8b347-public/05af5b82d40b3f7c2da2b6c56c24bdbc.png", width=500)
 
@@ -78,7 +97,8 @@ else:
 chosen_id = stx.tab_bar([
     stx.TabBarItemData(id="1", title="Chat", description=""),
     stx.TabBarItemData(id="2", title="Image Analysis", description=""),
-    stx.TabBarItemData(id="3", title="Image Generation", description="")
+    stx.TabBarItemData(id="3", title="Image Generation", description=""),
+    stx.TabBarItemData(id="4", title="Talk Against Document", description="")
 ])
 
 if chosen_id == "1":
@@ -153,7 +173,7 @@ if chosen_id == "1":
             st.rerun()  
 
 #Image generation
-if chosen_id == "3":
+elif chosen_id == "3":
         # Set up the title of the app
     st.title(":rainbow[Skilljourneys Vision GPT]")
     st.subheader(":rainbow[Creating images]")
@@ -188,16 +208,8 @@ if chosen_id == "3":
             st.warning("Please enter the OpenAI API key.")
 
 
-# Function to get image URL from uploaded file
-def get_image_url(image, image_type):
-    buffer = BytesIO()
-    image.save(buffer, format=image_type)
-    buffer.seek(0)
-    data_uri = base64.b64encode(buffer.read()).decode('utf-8')
-    image_url = f"data:image/{image_type};base64,{data_uri}"
-    return image_url
-
-if chosen_id == "2":   
+#----------------------Image processing----------------------
+elif chosen_id == "2":   
             # Set up the title of the app
     st.title(":rainbow[Skilljourneys Vision GPT]")
     st.subheader(":rainbow[Upload an Image for Analysis]")
@@ -247,3 +259,73 @@ if chosen_id == "2":
                     st.write(response)  # Print the whole response for debugging
         else:
             st.warning("Please provide an image URL or upload an image and ensure the API key is entered.")
+
+#----------------------Talking to your document----------------------
+elif chosen_id == "4":  
+     # Set up the title of the app
+    st.title(":rainbow[Skilljourneys Document GPT]")
+    st.subheader(":rainbow[Chat with CSV or XLSX files]")
+
+    # Link to Trivera Tech website
+    st.markdown(":blue[For more information, visit [Triveratech](https://www.triveratech.com).]")
+
+    with st.sidebar:
+        # Allow user to upload multiple files
+        input_files = st.file_uploader(
+            "Upload files", type=["xlsx", "csv"], accept_multiple_files=True
+        )
+
+  # Main content area
+    with st.container():
+
+        data_list = []
+        # If user uploaded files, load them
+        if len(input_files) > 0:
+           
+            for input_file in input_files:
+                if input_file.name.lower().endswith(".csv"):
+                    data = pd.read_csv(input_file)
+                else:
+                    data = pd.read_excel(input_file)
+                st.dataframe(data, use_container_width=True)
+                data_list.append(data)
+        # Otherwise, load the default file
+        else:
+            st.header("Example Data")
+            data = pd.read_excel("./Sample.xlsx")
+            st.dataframe(data, use_container_width=True)
+            data_list = [data]
+
+ 
+        # Create SmartDatalake instance
+        df = SmartDatalake(
+            data_list,
+            config={
+                "llm": OpenAI(api_token=openai_api_key),
+                "verbose": True,
+                "response_parser": StreamlitResponse,
+                
+            },
+        )
+        # Input text
+        st.header("Ask anything!")
+        input_text = st.text_area(
+            "Enter your question", value="What is the total profit for each country?"
+        )
+
+        if input_text is not None:
+            if st.button("Start Execution"):
+                result = df.chat(input_text)
+
+                # Display the result and code in two columns
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    # Display the result
+                    st.header("Answer")
+                    st.write(result)
+
+                with col2:
+                    # Display the corresponding code
+                    st.header("The corresponding code")
+                    st.code(df.last_code_executed, language="python", line_numbers=True)
