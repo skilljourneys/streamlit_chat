@@ -5,12 +5,19 @@ import pandas as pd
 from loguru import logger
 import extra_streamlit_components as stx
 from PIL import Image
-import requests
 from io import BytesIO
 import base64
-from pandasai.llm import OpenAI
+from pandasai.llm import OpenAI as pandaOpenAI
 from pandasai import SmartDatalake
 from pandasai.responses.streamlit_response import StreamlitResponse
+import docx2txt
+from PyPDF2 import PdfReader
+from langchain_text_splitters import CharacterTextSplitter
+from langchain.chains.question_answering import load_qa_chain
+from langchain_community.embeddings.openai import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_community.llms import OpenAI
+from langchain_community.callbacks.manager import get_openai_callback
 
 st.set_page_config(
     page_title="Skilljourneys ChatGPT",  # Sets the browser tab's title
@@ -86,13 +93,14 @@ if openai_api_key and not is_api_key_valid(openai_api_key):
     st.stop()
 else:
     client = openai.OpenAI(api_key=openai_api_key) 
-    pdclient = OpenAI(openai_api_key)   
+    pdclient = pandaOpenAI(openai_api_key)   
 
 chosen_id = stx.tab_bar([
     stx.TabBarItemData(id="1", title="Chat", description=""),
     stx.TabBarItemData(id="2", title="Image Analysis", description=""),
     stx.TabBarItemData(id="3", title="Image Generation", description=""),
-    stx.TabBarItemData(id="4", title="Talk with CSV or XLSX", description="")
+    stx.TabBarItemData(id="4", title="Talk with Data (CSV or XLSX)", description=""),
+    stx.TabBarItemData(id="5", title="Talk with Documents (PDF, TXT, DOCX)", description="")
 ])
 
 #----------------------Image processing----------------------
@@ -117,33 +125,27 @@ if chosen_id == "2":
             if uploaded_image:
                 try:
                     with Image.open(uploaded_image) as image_to_analyze:
-                       image_type = image_to_analyze.format
-                       # Display and process the uploaded image
-                       st.image(image_to_analyze, caption='Uploaded Image',)
-                       image_url = get_image_url(image_to_analyze, image_type)
-                except (FileNotFoundError, IOError):
-                       image_type = None              
-
-            if image_url:
-                # Request to OpenAI
-                response = client.chat.completions.create(
-                    model=model_option,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [{"type": "text", "text": user_prompt},
-                                        {"type": "image_url", "image_url": {"url": image_url}}],
-                        }
-                    ],
-                    max_tokens=300,
-                )
-                try:
-                    # Extract the response text correctly according to the response structure
-                    result_text = response.choices[0].message.content
-                    st.write(result_text)
-                except KeyError as e:
-                    st.error(f"Error extracting response: {e}")
-                    st.write(response)  # Print the whole response for debugging
+                        image_type = image_to_analyze.format
+                        # Display and process the uploaded image
+                        st.image(image_to_analyze, caption='Uploaded Image',)
+                        image_url = get_image_url(image_to_analyze, image_type)
+                        # Request to OpenAI
+                        response = client.chat.completions.create(
+                            model=model_option,
+                            messages=[
+                                {
+                                    "role": "user",
+                                    "content": [{"type": "text", "text": user_prompt},
+                                               {"type": "image_url", "image_url": {"url": image_url}}],
+                                }
+                            ],
+                            max_tokens=300,
+                        )
+                        # Extract the response text correctly according to the response structure
+                        result_text = response.choices[0].message.content
+                        st.write(result_text)
+                except (FileNotFoundError, IOError, KeyError) as e:
+                       st.error(f"Error extracting response: {e}")             
         else:
             st.warning("Please provide an image URL or upload an image and ensure the API key is entered.")
 # ----- Image generation -----
@@ -204,9 +206,10 @@ elif chosen_id == "4":
         for input_file in input_files:
             if input_file.name.lower().endswith(".csv"):
                 data = pd.read_csv(input_file)
+                st.dataframe(data, use_container_width=True)
             else:
                 data = pd.read_excel(input_file)
-                #st.dataframe(data, use_container_width=True)
+                st.dataframe(data, use_container_width=True)
                 data_list.append(data)
         # Create SmartDatalake instance
         df = SmartDatalake(
@@ -219,8 +222,6 @@ elif chosen_id == "4":
                 "response_parser": StreamlitResponse
             },
         )
-        # Input text   
-    if len(input_files) > 0:
         st.subheader("Ask your questions")
         if prompt := st.chat_input("Enter Prompt"):
             result = df.chat(prompt)
@@ -234,7 +235,62 @@ elif chosen_id == "4":
                 # Display the corresponding code
                 st.header("The corresponding code")
                 st.code(df.last_code_executed, language="python", line_numbers=True)
+#----------------------Talking to PDF, TXT or Word----------------------
+elif chosen_id == "5":  
+     # Set up the title of the app
+    st.title(":rainbow[Skilljourneys Document GPT]")
+    st.subheader(":rainbow[Chat with PDF, TXT or DOCX files]")
 
+    # Link to Trivera Tech website
+    st.markdown(":blue[For more information, visit [Triveratech](https://www.triveratech.com).]")
+
+    with st.sidebar:
+        # Allow user to upload multiple files
+        input_files = st.file_uploader(
+            "Upload files", type=["pdf", "txt", "docx"], accept_multiple_files=True
+        )
+    if len(input_files) > 0:
+    # extract text from uploaded files
+        all_text = ""
+        for uploaded_file in input_files:
+            if uploaded_file.type == "application/pdf":
+                pdf_reader = PdfReader(uploaded_file)
+                text = ""
+                for page in pdf_reader.pages:
+                    text += page.extract_text()
+            elif uploaded_file.type == "text/plain":
+                text = uploaded_file.read().decode("utf-8")
+            elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                text = docx2txt.process(uploaded_file)
+            else:
+                st.write(f"Unsupported file type: {uploaded_file.name}")
+                continue
+            all_text += text
+                # split into chunks
+            text_splitter = CharacterTextSplitter(
+                separator="\n",
+                chunk_size=1000,
+                chunk_overlap=200,
+                length_function=len
+            )
+            chunks = text_splitter.split_text(all_text)
+        
+            # create embeddings
+            embeddings = OpenAIEmbeddings()
+            knowledge_base = FAISS.from_texts(texts=chunks, embedding=embeddings)  # Update the parameter names
+
+            # show user input
+            user_question = st.text_input("Ask a question about the uploaded documents:")
+            if user_question:
+                docs = knowledge_base.similarity_search(user_question)
+            
+                llm = OpenAI()
+                chain = load_qa_chain(llm, chain_type="stuff")
+                with get_openai_callback() as cb:
+                    response = chain.run(input_documents=docs, question=user_question)
+                    print(response)
+            
+                st.write(response)
 # -------------------- Regular Chat API --------------------
 else:
     # Set up the title of the app
