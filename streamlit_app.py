@@ -275,7 +275,7 @@ elif chosen_id == "5":
             chunks = text_splitter.split_text(all_text)
         
             # create embeddings
-            embeddings = OpenAIEmbeddings()
+            embeddings = OpenAIEmbeddings(api_key=openai_api_key)
             knowledge_base = FAISS.from_texts(texts=chunks, embedding=embeddings)  # Update the parameter names
 
             # show user input
