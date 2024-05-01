@@ -2,7 +2,6 @@ import os
 import streamlit as st
 import openai 
 import pandas as pd
-from loguru import logger
 import extra_streamlit_components as stx
 from PIL import Image
 from io import BytesIO
