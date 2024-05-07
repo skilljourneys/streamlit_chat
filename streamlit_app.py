@@ -80,11 +80,23 @@ def get_image_url(image, image_type):
 st.image("https://lwfiles.mycourse.app/65a6a0bb6e5c564383a8b347-public/05af5b82d40b3f7c2da2b6c56c24bdbc.png", width=500)
 
 # Get OpenAI API key
+
 openai_api_key = st.sidebar.text_input('OpenAI API Key', type="password")
+
 
 # Check if the OpenAI API key is valid
 if not openai_api_key:
     st.warning('Please enter your OpenAI API key!', icon='⚠️')
+    st.title(':rainbow[Welcome to the AI Chat Application!]')
+    st.markdown("""
+            This application serves as a sandbox for learning and experimenting with artificial intelligence, providing you with a hands-on experience of prompt engineering.
+
+            **Disclaimer:**
+
+            Please note that this application is for training purposes only. The AI-generated responses may contain inaccuracies or reflect unintended biases, as artificial intelligence models can make mistakes.
+             
+            The responses provided do not necessarily reflect the opinions, beliefs, or views of the company or its affiliates. We encourage you to critically evaluate the output and engage with the material thoughtfully.
+            """)
     st.stop();
 # check if the API key is not valid
 if openai_api_key and not is_api_key_valid(openai_api_key):
@@ -209,13 +221,13 @@ elif chosen_id == "4":
             else:
                 data = pd.read_excel(input_file)
                 st.dataframe(data, use_container_width=True)
-                data_list.append(data)
+            data_list.append(data)
         # Create SmartDatalake instance
         df = SmartDatalake(
             data_list,
             config={
                 "llm": pdclient,
-                "verbose": False,
+                "verbose": True,
                 "enable_cache":False,
                 "save_logs": False,
                 "response_parser": StreamlitResponse
@@ -224,6 +236,7 @@ elif chosen_id == "4":
         st.subheader("Ask your questions")
         if prompt := st.chat_input("Enter Prompt"):
             result = df.chat(prompt)
+            st.markdown(prompt) 
             # Display the result and code in two columns
             col1, col2 = st.columns(2)
             with col1:
