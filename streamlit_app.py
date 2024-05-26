@@ -15,8 +15,11 @@ from langchain_text_splitters import CharacterTextSplitter
 from langchain.chains.question_answering import load_qa_chain
 from langchain_community.embeddings.openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain_community.llms import OpenAI
 from langchain_community.callbacks.manager import get_openai_callback
+from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
+from langchain_openai import ChatOpenAI
+from langchain.agents.agent_types import AgentType
+from langchain_openai import OpenAI
 
 st.set_page_config(
     page_title="Skilljourneys ChatGPT",  # Sets the browser tab's title
@@ -29,31 +32,26 @@ st.set_page_config(
 def create_model_data_table():
     model_data = {
         "MODEL": [
+            "gpt-4o",
+            "gpt-4",
             "gpt-4-turbo",
             "gpt-4-turbo-preview",
-            "gpt-4-1106-preview",
-            "gpt-4",
-            "gpt-4-32k",
             "gpt-3.5-turbo",
-            "gpt-3.5-turbo-1106"
         ],
         "DESCRIPTION": [
-            "Latest GPT-4 Turbo model with vision capabilities. Vision requests can now use JSON mode and function calling.",
+            "Most advanced, multimodal flagship model that’s cheaper and faster than GPT-4 Turbo.",
+            "GPT-4",
+            "Model with vision capabilities. Vision requests can now use JSON mode and function calling.",
             "GPT-4 Turbo preview model.",
-            "GPT-4 Turbo with improved instruction following and JSON mode. Max 4,096 tokens.",
-            "Latest version of GPT 4. Continuous upgrades.",
-            "Latest version of GPT 4-32K model Continuous upgrades.",
-            "Updated GPT-3.5 Turbo model. Fixes text encoding for non-English calls. Max 4,096 tokens.",
-            "GPT-3.5 Turbo with improved instruction following. Max 4,096 tokens."
+            "The latest GPT-3.5 Turbo model with higher accuracy at responding in requested formats and a fix for a bug which caused a text encoding issue for non-English language function calls. Max 4,096 tokens."
         ],
         "CONTEXT WINDOW": [
             "128,000 tokens",
             "128,000 tokens",
             "128,000 tokens",
-            "8,192 tokens",
-            "32,768 tokens",
+            "128,000 tokens",
             "16,385 tokens",
-            "16,385 tokens"
+
         ]
     }
     return pd.DataFrame(model_data)
@@ -125,7 +123,7 @@ if chosen_id == "2":
 
     with st.sidebar:
         uploaded_image = st.file_uploader("Upload file", type=["jpg", "jpeg", "png", "gif"])
-        model_option = st.selectbox("Select Model", ["gpt-4-vision-preview", "gpt-4-1106-vision-preview"], index=0) 
+        model_option = st.selectbox("Select Model", ["gpt-4o", "gpt-4-turbo"], index=1) 
 
     user_prompt = st.text_area(label="Enter Prompt", value="What's in this image?")
 
@@ -168,7 +166,7 @@ elif chosen_id == "3":
     st.markdown(":blue[For more information, visit [Triveratech](https://www.triveratech.com).]")
 
     with st.sidebar:
-       model_option = st.selectbox("Select Model", ["gpt-4-vision-preview", "gpt-4-1106-vision-preview"], index=0)
+       model_option = st.selectbox("Select Model", ["gpt-4o", "gpt-4-turbo"], index=1)
        # DALL-E settings
        dalle_size = st.selectbox("Select Image Size", ["1024x1024", "512x512", "256x256"], index=0)
        dalle_quality = st.selectbox("Select Image Quality", ["standard", "hd"], index=0)
@@ -206,47 +204,35 @@ elif chosen_id == "4":
 
     with st.sidebar:
         # Allow user to upload multiple files
-        input_files = st.file_uploader(
-            "Upload files", type=["xlsx", "csv"], accept_multiple_files=True
+        input_file = st.file_uploader(
+            "Upload files", type=["xlsx", "csv"], accept_multiple_files=False
         )
 
-    # Main content area
-    data_list = []
+
     # If user uploaded files, load them
-    if len(input_files) > 0:
-        for input_file in input_files:
-            if input_file.name.lower().endswith(".csv"):
-                data = pd.read_csv(input_file)
-                st.dataframe(data, use_container_width=True)
-            else:
-                data = pd.read_excel(input_file)
-                st.dataframe(data, use_container_width=True)
-            data_list.append(data)
-        # Create SmartDatalake instance
-        df = SmartDatalake(
-            data_list,
-            config={
-                "llm": pdclient,
-                "verbose": True,
-                "enable_cache":False,
-                "save_logs": False,
-                "response_parser": StreamlitResponse
-            },
+    if input_file is not None:
+
+        if input_file.name.lower().endswith(".csv"):
+            data = pd.read_csv(input_file)
+            st.dataframe(data, use_container_width=True)
+        else:
+            data = pd.read_excel(input_file)
+            st.dataframe(data, use_container_width=True)
+        agent = create_pandas_dataframe_agent(
+            ChatOpenAI(temperature=0.5, model="gpt-4-turbo", openai_api_key=openai_api_key),
+            data,
+            verbose=False,
+            agent_type=AgentType.OPENAI_FUNCTIONS,
         )
+ 
         st.subheader("Ask your questions")
         if prompt := st.chat_input("Enter Prompt"):
-            result = df.chat(prompt)
+            result = agent.invoke(prompt)
             st.markdown(prompt) 
-            # Display the result and code in two columns
-            col1, col2 = st.columns(2)
-            with col1:
-                # Display the result
-                st.header("Answer")
-                st.write(result)
-            with col2:
-                # Display the corresponding code
-                st.header("The corresponding code")
-                st.code(df.last_code_executed, language="python", line_numbers=True)
+            # Display the result
+            st.header("Answer")
+            st.write(result)
+
 #----------------------Talking to PDF, TXT or Word----------------------
 elif chosen_id == "5":  
      # Set up the title of the app
