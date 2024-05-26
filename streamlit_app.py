@@ -21,6 +21,7 @@ from langchain_openai import ChatOpenAI
 from langchain.agents.agent_types import AgentType
 from langchain_openai import OpenAI
 
+#20240526
 st.set_page_config(
     page_title="Skilljourneys ChatGPT",  # Sets the browser tab's title
     page_icon="favicon.ico",        # Sets a browser icon (favicon), here using an emoji
