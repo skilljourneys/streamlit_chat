@@ -24,7 +24,7 @@ from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 from streamlit_chat import message
 from langchain.embeddings.huggingface import HuggingFaceEmbeddings
-
+import tiktoken
 import json
 
 #20240526
@@ -405,8 +405,35 @@ else:
                 st.session_state.messages.append({"role": "assistant", "content": response})    
             except Exception as e:
                 st.error(f"An unexpected error occurred: {str(e)}", icon='🚨')               
-                    
-    if st.session_state.messages:
-        if st.button('Clear', key="clear"):
-            st.session_state.messages = []
-            st.rerun()  
+    # If there is at least one message in the chat, we display the options
+    if len(st.session_state["messages"]) > 0:
+
+        # We set the space between the icons thanks to a share of 100
+        cols_dimensions = [10,30,30,30]
+        col0, col1, col2, col3 = st.columns(cols_dimensions)
+
+        with col1:
+            # Converts the list of messages into a JSON Bytes format
+            json_messages = json.dumps(st.session_state["messages"]).encode("utf-8")
+            # And the corresponding Download button
+            st.download_button(
+                label="📥 Save chat!",
+                data=json_messages,
+                file_name="chat_conversation.json",
+                mime="application/json",
+            )
+        with col2:
+            if st.session_state.messages:
+                if st.button('Clear Chat 🧹', key="clear"):
+                    st.session_state.messages = []
+                    st.rerun()  
+        with col3:
+            # We initiate a tokenizer
+            enc = tiktoken.get_encoding("cl100k_base")
+            # We encode the messages
+            tokenized_full_text = enc.encode(
+                " ".join([item["content"] for item in st.session_state["messages"]])
+            )
+            # And display the corresponding number of tokens
+            st.markdown(f"💬 {len(tokenized_full_text)} tokens")
+
