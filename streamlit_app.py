@@ -7,8 +7,6 @@ from PIL import Image
 from io import BytesIO
 import base64
 from pandasai.llm import OpenAI as pandaOpenAI
-from pandasai import SmartDatalake
-from pandasai.responses.streamlit_response import StreamlitResponse
 import docx2txt
 from PyPDF2 import PdfReader
 from langchain_text_splitters import CharacterTextSplitter
@@ -20,6 +18,7 @@ from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe
 from langchain_openai import ChatOpenAI
 from langchain.agents.agent_types import AgentType
 from langchain_openai import OpenAI
+import json
 
 #20240526
 st.set_page_config(
@@ -200,6 +199,7 @@ elif chosen_id == "4":
     st.title(":rainbow[Skilljourneys Document GPT]")
     st.subheader(":rainbow[Chat with CSV or XLSX files]")
 
+
     # Link to Trivera Tech website
     st.markdown(":blue[For more information, visit [Triveratech](https://www.triveratech.com).]")
 
@@ -208,7 +208,16 @@ elif chosen_id == "4":
         input_file = st.file_uploader(
             "Upload files", type=["xlsx", "csv"], accept_multiple_files=False
         )
+    with st.sidebar:
+        st.write("Set Model Parameters")
+        model_option = st.selectbox("Select Model", ["gpt-4o", "gpt-4-turbo"], index=0)
+        temperature = st.slider("Temperature", 0.0, 1.0, 0.5)
+        
 
+    # Display chat history
+    for message in st.session_state['messages']:
+        with st.chat_message(message.get("role")):
+            st.write(message.get("content"))
 
     # If user uploaded files, load them
     if input_file is not None:
@@ -219,20 +228,32 @@ elif chosen_id == "4":
         else:
             data = pd.read_excel(input_file)
             st.dataframe(data, use_container_width=True)
+
         agent = create_pandas_dataframe_agent(
-            ChatOpenAI(temperature=0.5, model="gpt-4-turbo", openai_api_key=openai_api_key),
+            ChatOpenAI(temperature=temperature, model=model_option, openai_api_key=openai_api_key),
             data,
             verbose=False,
             agent_type=AgentType.OPENAI_FUNCTIONS,
+            handle_parsing_errors=True 
         )
  
         st.subheader("Ask your questions")
         if prompt := st.chat_input("Enter Prompt"):
-            result = agent.invoke(prompt)
-            st.markdown(prompt) 
-            # Display the result
-            st.header("Answer")
-            st.write(result)
+            try:
+                json_prompt = json.dumps(prompt)
+                result = agent.invoke(json_prompt)
+                with st.chat_message("user"):
+                    st.markdown(prompt)
+                # Display the parsed result
+                with st.chat_message("assistant"):
+                    if isinstance(result, dict):
+                        response_content = result.get('output','No output property found')
+                        st.markdown(response_content)
+                    else:
+                        st.write(result)
+            except (TypeError, ValueError) as e:
+                st.error(f"Failed to convert data: {e}")
+    
 
 #----------------------Talking to PDF, TXT or Word----------------------
 elif chosen_id == "5":  
@@ -248,6 +269,10 @@ elif chosen_id == "5":
         input_files = st.file_uploader(
             "Upload files", type=["pdf", "txt", "docx"], accept_multiple_files=True
         )
+    with st.sidebar:
+        st.write("Set Model Parameters")
+        model_option = st.selectbox("Select Model", ["gpt-4o", "gpt-4-turbo"], index=0)
+        temperature = st.slider("Temperature", 0.0, 1.0, 0.5)        
     if len(input_files) > 0:
     # extract text from uploaded files
         all_text = ""
@@ -283,7 +308,7 @@ elif chosen_id == "5":
             if user_question:
                 docs = knowledge_base.similarity_search(user_question)
             
-                llm = OpenAI(api_key=openai_api_key)
+                llm = OpenAI(openai_api_key=openai_api_key),
                 chain = load_qa_chain(llm, chain_type="stuff")
                 with get_openai_callback() as cb:
                     response = chain.run(input_documents=docs, question=user_question)
@@ -297,6 +322,7 @@ else:
     # Link to Trivera Tech website
     st.markdown(":blue[For more information, visit [Triveratech](https://www.triveratech.com).]")
     # Allow users to set parameters for the model
+    #What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.
     with st.sidebar:
         st.write("Set Model Parameters")
         temperature = st.slider("Temperature", 0.0, 2.0, 1.0)
