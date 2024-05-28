@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+
 import openai 
 import pandas as pd
 import extra_streamlit_components as stx
@@ -18,6 +19,12 @@ from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe
 from langchain_openai import ChatOpenAI
 from langchain.agents.agent_types import AgentType
 from langchain_openai import OpenAI
+
+from langchain.chains import ConversationalRetrievalChain
+from langchain.memory import ConversationBufferMemory
+from streamlit_chat import message
+from langchain.embeddings.huggingface import HuggingFaceEmbeddings
+
 import json
 
 #20240526
@@ -271,8 +278,9 @@ elif chosen_id == "5":
         )
     with st.sidebar:
         st.write("Set Model Parameters")
-        model_option = st.selectbox("Select Model", ["gpt-4o", "gpt-4-turbo"], index=0)
-        temperature = st.slider("Temperature", 0.0, 1.0, 0.5)        
+        model_option = st.selectbox("Select Model", ["gpt-4o", "gpt-4-turbo","gpt-3.5-turbo"], index=2)
+        temperature = st.slider("Temperature", 0.0, 1.0, 0.5)  
+
     if len(input_files) > 0:
     # extract text from uploaded files
         all_text = ""
@@ -300,21 +308,36 @@ elif chosen_id == "5":
             chunks = text_splitter.split_text(all_text)
         
             # create embeddings
-            embeddings = OpenAIEmbeddings(api_key=openai_api_key)
+            embeddings = HuggingFaceEmbeddings()
             knowledge_base = FAISS.from_texts(texts=chunks, embedding=embeddings)  # Update the parameter names
 
+            llm = ChatOpenAI(openai_api_key=openai_api_key, model_name = model_option,temperature=temperature)
+            memory = ConversationBufferMemory(memory_key='chat_history', return_messages=True)
+            conversation_chain = ConversationalRetrievalChain.from_llm(
+                llm=llm,
+                retriever=knowledge_base.as_retriever(), 
+                memory=memory
+            )
+            st.session_state.conversation = conversation_chain
+
             # show user input
-            user_question = st.text_input("Ask a question about the uploaded documents:")
+            user_question = st.chat_input("Ask a question about the uploaded documents:")
             if user_question:
-                docs = knowledge_base.similarity_search(user_question)
-            
-                llm = OpenAI(openai_api_key=openai_api_key),
-                chain = load_qa_chain(llm, chain_type="stuff")
                 with get_openai_callback() as cb:
-                    response = chain.run(input_documents=docs, question=user_question)
-                    print(response)
-            
-                st.write(response)
+                    response = st.session_state.conversation({'question':user_question})
+                st.session_state.chat_history = response['chat_history']
+
+                response_container = st.container()
+
+                with response_container:
+                    for i, messages in enumerate(st.session_state.chat_history):
+                        if i % 2 == 0:
+                            message(messages.content, is_user=True, key=str(i))
+                        else:
+                            message(messages.content, key=str(i))
+                    st.write(f"Total Tokens: {cb.total_tokens}" f", Prompt Tokens: {cb.prompt_tokens}" f", Completion Tokens: {cb.completion_tokens}" f", Total Cost (USD): ${cb.total_cost}")
+
+
 # -------------------- Regular Chat API --------------------
 else:
     # Set up the title of the app
