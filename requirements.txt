@@ -1,7 +1,7 @@
 streamlit
 openai
-pandas==2.2.3
-pandasai==2.0.36
+pandas
+pandasai
 pillow==10.3.0
 requests==2.31.0
 extra-streamlit-components==0.1.71
