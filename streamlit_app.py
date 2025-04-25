@@ -176,7 +176,6 @@ elif chosen_id == "3":
        model_option = st.selectbox("Select Model", ["gpt-4o", "gpt-4-turbo"], index=1)
        # DALL-E settings
        dalle_size = st.selectbox("Select Image Size", ["1024x1024", "512x512", "256x256"], index=0)
-       dalle_quality = st.selectbox("Select Image Quality", ["standard", "hd"], index=0)
        dalle_n = st.slider("Number of Images", 1, 4, 1)
     
 
@@ -188,7 +187,6 @@ elif chosen_id == "3":
                 response = client.images.generate(
                      prompt=dalle_prompt,
                     size=dalle_size,
-                    quality=dalle_quality,
                     n=dalle_n,
                 )
                 # Display generated images
