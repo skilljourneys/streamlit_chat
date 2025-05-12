@@ -184,9 +184,15 @@ elif chosen_id == "3":
         if openai_api_key:
             try:
                 # Request to OpenAI DALL-E
+             #   response = client.images.generate(
+             #        prompt=dalle_prompt,
+             #       size=dalle_size,
+             #       n=dalle_n,
+             #   )
                 response = client.images.generate(
-                     prompt=dalle_prompt,
-                    size=dalle_size,
+                    model="dall-e-3",  # critical for realism
+                    prompt=dalle_prompt,
+                    size="1024x1024",
                     n=dalle_n,
                 )
                 # Display generated images
